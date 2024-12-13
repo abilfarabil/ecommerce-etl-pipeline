@@ -1,0 +1,109 @@
+version: '3'
+
+services:
+  # PostgreSQL Service
+  postgres:
+    image: postgres:13
+    container_name: de_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_dw}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - de_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin"]
+      interval: 5s
+      retries: 5
+
+  # Airflow Service
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    container_name: de_airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-ecommerce_dw}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+      - AIRFLOW__WEBSERVER__SECRET_KEY=your_secret_key
+      - AIRFLOW_HOME=/opt/airflow
+      - AIRFLOW__WEBSERVER__WORKERS=4
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - airflow_logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    command: bash -c "airflow db init && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com && airflow webserver"
+    networks:
+      - de_network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Airflow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    container_name: de_airflow_scheduler
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-ecommerce_dw}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW_HOME=/opt/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - airflow_logs:/opt/airflow/logs
+    command: airflow scheduler
+    networks:
+      - de_network
+
+  # Spark Service (untuk processing data besar)
+  spark:
+    image: bitnami/spark:latest
+    container_name: de_spark
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8181:8080"
+      - "7077:7077"
+    networks:
+      - de_network
+
+  # Streamlit Service (untuk dashboard)
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.streamlit
+    container_name: de_streamlit
+    depends_on:
+      - postgres
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./dashboards:/app/dashboards
+    networks:
+      - de_network
+
+networks:
+  de_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  airflow_logs:

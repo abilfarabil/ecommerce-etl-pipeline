@@ -1,0 +1,66 @@
+# Data files
+data/raw/
+data/processed/
+data/final/
+
+# Environment
+venv/
+.env
+.venv
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+notebooks/.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.classpath
+.settings/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Database
+*.sqlite3
+*.db
+
+# Airflow
+airflow.cfg
+airflow.db
+unittests.cfg
+logs/
+airflow-webserver.pid
+webserver_config.py
