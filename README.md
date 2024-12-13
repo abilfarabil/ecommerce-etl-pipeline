@@ -97,7 +97,7 @@ pip install -r requirements.txt
 ```
 
 3. Download dataset
-- Download dataset dari [link](masukkan_link_gdrive_disini)
+- Download dataset dari [link](https://drive.google.com/drive/folders/1KfU0tnNtG0dhKgZqZlXw8WuYygIyLMR5?usp=sharing)
 - Extract ke folder `data/raw/`
 
 4. Jalankan docker containers
@@ -105,14 +105,9 @@ pip install -r requirements.txt
 docker-compose up -d
 ```
 
-5. Run ETL pipeline
-```bash
-python tests/test_etl.py
-```
-
 ## Links
 
-- [Project Presentation](masukkan_link_ppt_disini)
+- [Project Presentation](https://docs.google.com/presentation/d/1onIWAbjSKY0Ictg-DrvV9Xkq4SgDYzB3VxqPppCL7ms/edit#slide=id.g31a2675ead3_0_104)
 - [Project Documentation](docs/architecture.md)
 - [Data Dictionary](docs/data_dictionary.md)
 
