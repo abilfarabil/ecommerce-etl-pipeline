@@ -9,6 +9,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
       POSTGRES_DB: ${POSTGRES_DB:-ecommerce_dw}
+      # Optimasi PostgreSQL
+      POSTGRES_MAX_CONNECTIONS: 100
+      POSTGRES_SHARED_BUFFERS: 512MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1536MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 128MB
+      POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.9
+      POSTGRES_WAL_BUFFERS: 16MB
+      POSTGRES_DEFAULT_STATISTICS_TARGET: 100
     ports:
       - "5432:5432"
     volumes:
@@ -18,29 +26,80 @@ services:
       - de_network
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "admin"]
-      interval: 5s
-      retries: 5
+      interval: 10s  # Ditingkatkan dari 5s
+      timeout: 5s
+      retries: 3    # Dikurangi dari 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+        reservations:
+          memory: 1G
+          cpus: '1'
 
-  # Airflow Service
+  # Airflow Webserver
   airflow-webserver:
     image: apache/airflow:2.7.1
     container_name: de_airflow
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 6G    # Diturunkan dari 8G untuk mengurangi beban
+          cpus: '2'
+        reservations:
+          memory: 3G    # Diturunkan dari 4G
+          cpus: '1'
     environment:
+      - AIRFLOW__WEBSERVER__SECRET_KEY=z9plnehk236b1fcvua8yoids4xwjtrqm
+      - AIRFLOW_CONN_POSTGRES_DEFAULT=postgresql://admin:admin123@postgres:5432/ecommerce_dw
+      - _PIP_ADDITIONAL_REQUIREMENTS=selenium beautifulsoup4 pandas numpy psycopg2-binary
+      - PYTHONPATH=/opt/airflow
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-ecommerce_dw}
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
       - AIRFLOW__WEBSERVER__SECRET_KEY=your_secret_key
       - AIRFLOW_HOME=/opt/airflow
-      - AIRFLOW__WEBSERVER__WORKERS=4
+      # Optimasi Webserver
+      - AIRFLOW__WEBSERVER__WORKERS=1             # Dikurangi dari 2
+      - AIRFLOW__WEBSERVER__WORKER_CLASS=sync
+      - AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT=120
+      - AIRFLOW__WEBSERVER__WORKER_REFRESH_BATCH_SIZE=1
+      # Timeout settings yang dioptimasi
+      - AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT=1800  # Diturunkan ke 30 menit
+      - AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT=1800
+      - AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL=3600  # Diturunkan ke 1 jam
+      - AIRFLOW__CORE__TASK_EXECUTION_TIMEOUT=3600        # Diturunkan ke 1 jam
+      # Optimasi concurrency
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+      - AIRFLOW__CORE__PARALLELISM=1              # Dikurangi dari 2
+      - AIRFLOW__CORE__DAG_CONCURRENCY=1          # Dikurangi dari 2
+      - AIRFLOW__SCHEDULER__WORKER_TIMEOUT=3600   # Diturunkan ke 1 jam
+      # Memory management yang dioptimasi
+      - AIRFLOW__CORE__MIN_SERIALIZED_DAG_UPDATE_INTERVAL=30
+      - AIRFLOW__CORE__MIN_SERIALIZED_DAG_FETCH_INTERVAL=30
+      - AIRFLOW__SCHEDULER__DAG_FILE_PROCESSOR_TIMEOUT=600
+      - AIRFLOW__CORE__STORE_DAG_CODE=False
+      - AIRFLOW__CORE__STORE_SERIALIZED_DAGS=True
+      - AIRFLOW__CORE__KILLED_TASK_CLEANUP_TIME=1800
+      - AIRFLOW__SCHEDULER__PARSING_PROCESSES=1
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=WARNING    # Diubah dari INFO ke WARNING
+      - PYTHONOPTIMIZE=2                          # Ditingkatkan dari 1
+      # Log rotation
+      - AIRFLOW__LOGGING__DAG_FILE_PROCESSOR_MAX_BYTES=104857600  # 100MB
+      - AIRFLOW__LOGGING__DAG_FILE_PROCESSOR_BACKUP_COUNT=2
+      - AIRFLOW__LOGGING__TASK_LOG_READER_CHUNK_SIZE=16384
+      - AIRFLOW__SCHEDULER__FILE_PARSING_SORT_MODE=modified_time
     volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./data:/opt/airflow/data
+      - ./airflow/dags:/opt/airflow/dags:ro          # Read-only
+      - ./airflow/plugins:/opt/airflow/plugins:ro     # Read-only
+      - ./data:/opt/airflow/data:ro                  # Read-only
       - airflow_logs:/opt/airflow/logs
+      - ./src:/opt/airflow/src:ro                    # Read-only
     ports:
       - "8080:8080"
     command: bash -c "airflow db init && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com && airflow webserver"
@@ -48,9 +107,10 @@ services:
       - de_network
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
+      interval: 20s    # Ditingkatkan dari 10s
+      timeout: 10s     # Diturunkan dari 20s
+      retries: 3       # Dikurangi dari 5
+      start_period: 30s
 
   # Airflow Scheduler
   airflow-scheduler:
@@ -59,33 +119,75 @@ services:
     depends_on:
       airflow-webserver:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 6G    # Diturunkan dari 8G
+          cpus: '2'
+        reservations:
+          memory: 3G    # Diturunkan dari 4G
+          cpus: '1'
     environment:
+      - AIRFLOW__WEBSERVER__SECRET_KEY=z9plnehk236b1fcvua8yoids4xwjtrqm
+      - AIRFLOW_CONN_POSTGRES_DEFAULT=postgresql://admin:admin123@postgres:5432/ecommerce_dw
+      - PYTHONPATH=/opt/airflow
+      - _PIP_ADDITIONAL_REQUIREMENTS=selenium beautifulsoup4 pandas numpy psycopg2-binary
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-ecommerce_dw}
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
       - AIRFLOW_HOME=/opt/airflow
+      # Optimasi scheduler
+      - AIRFLOW__SCHEDULER__MAX_THREADS=2
+      - AIRFLOW__SCHEDULER__PARSE_MAX_THREADS=2
+      - AIRFLOW__SCHEDULER__SCHEDULER_HEALTH_CHECK_THRESHOLD=30
+      # Timeout settings yang dioptimasi
+      - AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT=1800
+      - AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT=1800
+      - AIRFLOW__CORE__TASK_EXECUTION_TIMEOUT=3600
+      # Optimasi concurrency
+      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+      - AIRFLOW__CORE__PARALLELISM=1
+      - AIRFLOW__CORE__DAG_CONCURRENCY=1
+      # Memory management yang dioptimasi
+      - AIRFLOW__SCHEDULER__PARSING_PROCESSES=1
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=WARNING
+      - PYTHONOPTIMIZE=2
     volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./data:/opt/airflow/data
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./airflow/plugins:/opt/airflow/plugins:ro
+      - ./data:/opt/airflow/data:ro
       - airflow_logs:/opt/airflow/logs
-    command: airflow scheduler
+      - ./src:/opt/airflow/src:ro
+    command: bash -c "airflow scheduler"
     networks:
       - de_network
 
-  # Spark Service (untuk processing data besar)
+  # Spark Service (Optional - comment if not needed)
   spark:
     image: bitnami/spark:latest
     container_name: de_spark
     environment:
       SPARK_MODE: master
+      # Optimasi Spark
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
     ports:
       - "8181:8080"
       - "7077:7077"
     networks:
       - de_network
+    deploy:
+      resources:
+        limits:
+          memory: 3G    # Diturunkan dari 4G
+          cpus: '2'
+        reservations:
+          memory: 1.5G  # Diturunkan dari 2G
+          cpus: '1'
 
-  # Streamlit Service (untuk dashboard)
+  # Streamlit Service
   streamlit:
     build:
       context: .
@@ -96,14 +198,32 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./dashboards:/app/dashboards
+      - ./dashboards:/app/dashboards:ro
     networks:
       - de_network
+    deploy:
+      resources:
+        limits:
+          memory: 1G    # Diturunkan dari 2G
+          cpus: '1'
+        reservations:
+          memory: 512M  # Diturunkan dari 1G
+          cpus: '0.5'
+    environment:
+      - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=5
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_THEME_BASE=light
 
 networks:
   de_network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   postgres_data:
+    driver: local
   airflow_logs:
+    driver: local
